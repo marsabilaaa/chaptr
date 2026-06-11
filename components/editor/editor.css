@@ -1,0 +1,95 @@
+.editor-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.ProseMirror {
+  min-height: calc(100vh - 200px);
+  outline: none;
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--foreground);
+}
+
+.ProseMirror p {
+  margin-bottom: 1em;
+}
+
+.ProseMirror h1 {
+  font-size: 2em;
+  font-weight: 700;
+  margin-bottom: 0.5em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+.ProseMirror h3 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.ProseMirror code {
+  background: var(--muted);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.ProseMirror pre {
+  background: var(--muted);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+.character-count {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+.ProseMirror ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem;
+  margin-bottom: 1em;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25em;
+}
+
+.ProseMirror li p {
+  margin-bottom: 0;
+}
