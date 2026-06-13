@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { useEditor } from "@tiptap/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import EditorToolbar from "@/components/editor/EditorToolbar";
+import ChapterBar from "@/components/editor/ChapterBar";
+import { useChapters } from "@/hooks/useChapters";
+import { extractChapters, type Chapter } from "@/lib/editor/extractChapters";
 import { EditorContent } from "@tiptap/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,41 +22,138 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Download, Copy, FileText, Share2 } from "lucide-react";
+import { DOMSerializer, Fragment, Slice } from "prosemirror-model";
 import "@/components/editor/editor.css";
 import CommitHistory from "@/components/editor/CommitHistory";
 
+function serializeFragment(fragment: any, schema: any) {
+  const serializer = DOMSerializer.fromSchema(schema);
+  const container = document.createElement("div");
+  container.appendChild(serializer.serializeFragment(fragment));
+  return container.innerHTML;
+}
+
+function sanitizePasteSlice(slice: Slice, schema: any) {
+  const mapFragment = (fragment: any): any => {
+    const nodes: any[] = [];
+    fragment.forEach((node: any) => {
+      if (node.type.name === "heading" && node.attrs.level === 1) {
+        const paragraph = schema.nodes.paragraph.create(
+          node.attrs,
+          mapFragment(node.content),
+          node.marks,
+        );
+        nodes.push(paragraph);
+      } else if (node.content && node.content.size) {
+        nodes.push(node.copy(mapFragment(node.content)));
+      } else {
+        nodes.push(node);
+      }
+    });
+    return Fragment.fromArray(nodes);
+  };
+
+  return new Slice(mapFragment(slice.content), slice.openStart, slice.openEnd);
+}
+
+function getDraftKey(branchId: string) {
+  return `chaptr:draft:${branchId}`;
+}
+
+function loadDraft(branchId: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(getDraftKey(branchId));
+    if (!raw) return null;
+    return JSON.parse(raw) as { content: string; updatedAt: number };
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(branchId: string, content: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    getDraftKey(branchId),
+    JSON.stringify({ content, updatedAt: Date.now() }),
+  );
+}
+
+function clearDraft(branchId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(getDraftKey(branchId));
+}
+
+function getChapterHtml(chapter: Chapter, sourceEditor: Editor) {
+  const range = sourceEditor.state.doc.cut(chapter.from, chapter.to);
+  return serializeFragment(range.content, sourceEditor.state.schema);
+}
+
 export default function EditorPage() {
   const { id, branchId } = useParams<{ id: string; branchId: string }>();
+  const router = useRouter();
   const [title, setTitle] = useState("Untitled");
   const [commitMessage, setCommitMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
+  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  const [isChapterOpen, setIsChapterOpen] = useState(true);
 
-  const editor = useEditor({
+  const fullEditor = useEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit,
-      Placeholder.configure({
-        placeholder: "Start writing your story...",
-      }),
+      Placeholder.configure({ placeholder: "Start writing your story..." }),
       CharacterCount,
     ],
     content: "",
   });
 
-  // Fetch dokumen
+  const chapterEditor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      Placeholder.configure({ placeholder: "Start writing your story..." }),
+      CharacterCount,
+    ],
+    content: "",
+    editorProps: {
+      handlePaste(view, event, slice) {
+        const sanitized = sanitizePasteSlice(slice, view.state.schema);
+        const tr = view.state.tr.replaceSelection(sanitized).scrollIntoView();
+        view.dispatch(tr);
+        return true;
+      },
+    },
+  });
+
+  const chapters = useChapters(fullEditor);
+
+  const isChapterView = activeChapterId !== null;
+  const currentEditor = isChapterView ? chapterEditor : fullEditor;
+  const chapterSyncFlushRef = useRef<(() => void) | null>(null);
+  const suppressChapterSyncRef = useRef(false);
+  const lastSavedHtmlRef = useRef("");
+  const lastAutoCommitHtmlRef = useRef("");
+  const autoCommitPendingRef = useRef(false);
+  const changeCountRef = useRef(0);
+
   useEffect(() => {
+    if (!id || !fullEditor) return;
+
     async function fetchDoc() {
       const res = await fetch(`/api/documents/${id}`);
       const data = await res.json();
       setTitle(data.title);
     }
+
     fetchDoc();
-  }, [id]);
+  }, [id, fullEditor]);
 
   useEffect(() => {
     async function fetchLatestContent() {
-      if (!branchId || !editor) return;
+      if (!branchId || !fullEditor) return;
 
       const res = await fetch(`/api/commits?branchId=${branchId}`);
       if (!res.ok) return;
@@ -68,15 +168,21 @@ export default function EditorPage() {
       if (!restoreRes.ok) return;
 
       const data = await restoreRes.json();
-      if (data.content) {
-        editor.commands.setContent(data.content);
-      }
+      const commitContent = data.content ?? "";
+      const draft = loadDraft(branchId);
+      const contentToLoad =
+        draft?.content && draft.content !== commitContent
+          ? draft.content
+          : commitContent;
+
+      fullEditor.commands.setContent(contentToLoad);
+      lastSavedHtmlRef.current = contentToLoad;
+      lastAutoCommitHtmlRef.current = commitContent;
     }
 
     fetchLatestContent();
-  }, [branchId, editor]);
+  }, [branchId, fullEditor]);
 
-  // Auto-save judul
   useEffect(() => {
     const timeout = setTimeout(async () => {
       await fetch(`/api/documents/${id}`, {
@@ -85,14 +191,168 @@ export default function EditorPage() {
         body: JSON.stringify({ title }),
       });
     }, 1000);
+
     return () => clearTimeout(timeout);
   }, [title, id]);
+
+  const createAutoCommit = useCallback(async () => {
+    if (!branchId || !fullEditor || autoCommitPendingRef.current) return;
+
+    const content = fullEditor.getHTML();
+    if (!content || content === lastAutoCommitHtmlRef.current) return;
+
+    autoCommitPendingRef.current = true;
+
+    const res = await fetch("/api/commits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        branchId,
+        content,
+        message: "Autosave",
+      }),
+    });
+
+    autoCommitPendingRef.current = false;
+
+    if (res.ok) {
+      lastAutoCommitHtmlRef.current = content;
+      clearDraft(branchId);
+      setDraftSavedAt(Date.now());
+    }
+  }, [branchId, fullEditor]);
+
+  useEffect(() => {
+    if (!branchId || !fullEditor) return;
+
+    let timeoutId: number | undefined;
+
+    const handleAutosave = () => {
+      const content = fullEditor.getHTML();
+      if (!content || content === lastSavedHtmlRef.current) return;
+
+      saveDraft(branchId, content);
+      lastSavedHtmlRef.current = content;
+      setDraftSavedAt(Date.now());
+      changeCountRef.current += 1;
+
+      if (changeCountRef.current >= 20) {
+        changeCountRef.current = 0;
+        void createAutoCommit();
+      }
+    };
+
+    const debouncedUpdate = () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(handleAutosave, 1000);
+    };
+
+    fullEditor.on("update", debouncedUpdate);
+
+    return () => {
+      fullEditor.off("update", debouncedUpdate);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [branchId, fullEditor, createAutoCommit]);
+
+  useEffect(() => {
+    if (!branchId || !fullEditor) return;
+
+    const intervalId = window.setInterval(
+      () => {
+        void createAutoCommit();
+      },
+      5 * 60 * 1000,
+    );
+
+    return () => window.clearInterval(intervalId);
+  }, [branchId, fullEditor, createAutoCommit]);
+
+  useEffect(() => {
+    if (!chapterEditor || !fullEditor || activeChapterId === null) return;
+
+    const chapter = chapters.find((item) => item.id === activeChapterId);
+    if (!chapter) return;
+
+    let timeoutId: number | undefined;
+
+    const syncChapter = () => {
+      const chapterJson = chapterEditor.getJSON();
+      const fullDoc = fullEditor.state.doc;
+      const chapterDoc = fullEditor.state.schema.nodeFromJSON(chapterJson);
+      const updatedFull = fullDoc.replace(
+        chapter.from,
+        chapter.to,
+        new Slice(chapterDoc.content, 0, 0),
+      );
+
+      fullEditor.commands.setContent(updatedFull.toJSON());
+      timeoutId = undefined;
+    };
+
+    const scheduleSync = () => {
+      if (suppressChapterSyncRef.current) return;
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      timeoutId = window.setTimeout(syncChapter, 500);
+    };
+
+    chapterSyncFlushRef.current = () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+        syncChapter();
+      }
+    };
+
+    chapterEditor.on("update", scheduleSync);
+
+    return () => {
+      chapterEditor.off("update", scheduleSync);
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+        syncChapter();
+      }
+      chapterSyncFlushRef.current = null;
+    };
+  }, [chapterEditor, fullEditor, activeChapterId, chapters]);
+
+  useEffect(() => {
+    if (
+      activeChapterId !== null &&
+      !chapters.some((chapter) => chapter.id === activeChapterId)
+    ) {
+      setActiveChapterId(null);
+    }
+  }, [activeChapterId, chapters]);
+
+  function getExportHtml() {
+    if (activeChapterId !== null) {
+      return chapterEditor?.getHTML() ?? "";
+    }
+    return fullEditor?.getHTML() ?? "";
+  }
+
+  function getExportText() {
+    if (activeChapterId !== null) {
+      return chapterEditor?.getText() ?? "";
+    }
+    return fullEditor?.getText() ?? "";
+  }
 
   async function handleCommit() {
     if (!commitMessage.trim()) return;
     setSaving(true);
 
-    const content = editor?.getHTML() ?? "";
+    if (activeChapterId !== null) {
+      chapterSyncFlushRef.current?.();
+    }
+
+    const content = fullEditor?.getHTML() ?? "";
 
     const res = await fetch("/api/commits", {
       method: "POST",
@@ -107,6 +367,11 @@ export default function EditorPage() {
     if (res.ok) {
       setSaved(true);
       setCommitMessage("");
+      if (branchId) clearDraft(branchId);
+      const savedContent = fullEditor?.getHTML() ?? "";
+      lastSavedHtmlRef.current = savedContent;
+      lastAutoCommitHtmlRef.current = savedContent;
+      setDraftSavedAt(Date.now());
       setTimeout(() => setSaved(false), 2000);
     }
 
@@ -114,7 +379,7 @@ export default function EditorPage() {
   }
 
   async function copyAsHtml() {
-    const html = editor?.getHTML() ?? "";
+    const html = getExportHtml();
     if (!html) return;
 
     const fullHtml = `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>Export</title>\n</head>\n<body>\n${html}\n</body>\n</html>`;
@@ -122,7 +387,7 @@ export default function EditorPage() {
   }
 
   async function copyAsRichText() {
-    const html = editor?.getHTML() ?? "";
+    const html = getExportHtml();
     if (!html) return;
 
     if (navigator.clipboard && "ClipboardItem" in window) {
@@ -131,7 +396,7 @@ export default function EditorPage() {
         new ClipboardItem({ "text/html": blob }),
       ]);
     } else {
-      await navigator.clipboard.writeText(editor?.getText() ?? "");
+      await navigator.clipboard.writeText(getExportText());
     }
   }
 
@@ -148,40 +413,87 @@ export default function EditorPage() {
   }
 
   function downloadHtml() {
-    const html = editor?.getHTML() ?? "";
+    const html = getExportHtml();
     const fullHtml = `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>Export</title>\n</head>\n<body>\n${html}\n</body>\n</html>`;
     downloadFile("chaptr-export.html", fullHtml, "text/html");
   }
 
   function downloadDoc() {
-    downloadFile(
-      "chaptr-export.doc",
-      editor?.getHTML() ?? "",
-      "application/msword",
-    );
+    downloadFile("chaptr-export.doc", getExportHtml(), "application/msword");
   }
 
   function handleRestore(content: string) {
-    editor?.commands.setContent(content);
+    fullEditor?.commands.setContent(content);
+    if (activeChapterId !== null) {
+      setActiveChapterId(null);
+    }
   }
+
+  const handleSelectChapter = (chapterId: string | null) => {
+    if (!fullEditor || !chapterEditor) return;
+
+    if (chapterId === null) {
+      setActiveChapterId(null);
+      return;
+    }
+
+    const selectedChapter = chapters.find(
+      (chapter) => chapter.id === chapterId,
+    );
+    if (!selectedChapter) return;
+
+    if (activeChapterId === null) {
+      fullEditor
+        .chain()
+        .focus()
+        .setTextSelection(selectedChapter.from)
+        .scrollIntoView()
+        .run();
+
+      setTimeout(() => {
+        const chapterHtml = getChapterHtml(selectedChapter, fullEditor);
+        chapterEditor.commands.setContent(chapterHtml);
+        setActiveChapterId(chapterId);
+      }, 150);
+      return;
+    }
+
+    chapterSyncFlushRef.current?.();
+    const chapterHtml = getChapterHtml(selectedChapter, fullEditor);
+    suppressChapterSyncRef.current = true;
+    chapterEditor.commands.setContent(chapterHtml);
+    setActiveChapterId(chapterId);
+    window.requestAnimationFrame(() => {
+      suppressChapterSyncRef.current = false;
+    });
+  };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
       <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-semibold">Chaptr</span>
+        <div className="flex flex-1 flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={() => router.push("/documents")}
+            className="text-sm font-semibold text-foreground transition hover:text-primary"
+          >
+            Chaptr
+          </button>
           <span className="text-muted-foreground text-sm">/</span>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 w-48"
+            className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 min-w-[10rem] max-w-full sm:w-48"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {editor?.storage.characterCount.words() ?? 0} words
-          </span>
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-right">
+          <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:text-right">
+            <span>
+              {currentEditor?.storage.characterCount.words() ?? 0} words
+            </span>
+            <span>{draftSavedAt ? "Draft saved" : "Draft not saved"}</span>
+          </div>
           <div className="relative">
             <CommitHistory branchId={branchId} onRestore={handleRestore} />
           </div>
@@ -231,13 +543,62 @@ export default function EditorPage() {
 
       {/* Toolbar */}
       <div className="border-b border-border px-6 py-2">
-        <EditorToolbar editor={editor} />
+        <EditorToolbar editor={currentEditor} disableHeading1={isChapterView} />
       </div>
 
       {/* Editor */}
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <EditorContent editor={editor} />
+      <div
+        className={`max-w-3xl mx-auto px-6 py-12 ${
+          isChapterOpen ? "pb-40" : ""
+        }`}
+      >
+        {currentEditor ? <EditorContent editor={currentEditor} /> : null}
       </div>
+
+      {/* Collapsible chapter bar */}
+      <div
+        className={`border-t border-border bg-background px-6 py-4 ${
+          isChapterOpen
+            ? "fixed bottom-4 left-0 right-0 z-40 mx-4 rounded-lg shadow-lg"
+            : "relative"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold">Chapters</p>
+            <p className="text-xs text-muted-foreground">
+              Browse sections by H1 headings.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setIsChapterOpen((value) => !value)}
+          >
+            {isChapterOpen ? "Collapse" : "Open"}
+          </Button>
+        </div>
+        {isChapterOpen && (
+          <div className="mt-4">
+            <ChapterBar
+              chapters={chapters}
+              activeChapterId={activeChapterId}
+              onSelect={handleSelectChapter}
+            />
+          </div>
+        )}
+      </div>
+      {!isChapterOpen && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setIsChapterOpen(true)}
+          >
+            Chapters
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
