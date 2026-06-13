@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import Link from "next/link";
 
 interface Document {
   id: string;
@@ -65,6 +66,14 @@ export default function DocumentList({ userId }: { userId: string }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">My Documents</h1>
+         <div className="flex items-center gap-3">
+          <Link
+            href="/settings"
+            className="px-3 py-1 rounded-md hover:bg-accent/20"
+          >
+            Settings
+          </Link>
+        </div>
         <Button onClick={createDocument} disabled={creating}>
           {creating ? "Creating..." : "+ New Document"}
         </Button>
