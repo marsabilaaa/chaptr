@@ -11,7 +11,6 @@ export async function POST(req: Request) {
 
   const { branchId, content, message } = await req.json()
 
-  // Ambil branch
   const [branch] = await db
     .select()
     .from(branches)
@@ -19,7 +18,6 @@ export async function POST(req: Request) {
 
   if (!branch) return NextResponse.json({ error: 'Branch not found' }, { status: 404 })
 
-  // Hitung total commit di branch ini
   const [{ value: commitCount }] = await db
     .select({ value: count() })
     .from(commits)
@@ -27,7 +25,6 @@ export async function POST(req: Request) {
 
   const isSnapshot = commitCount % 20 === 0
 
-  // Upload content ke Supabase Storage
   const fileName = `${branch.documentId}/${branchId}/${Date.now()}.json`
   const { error: uploadError } = await supabase.storage
     .from('yjs-states')
@@ -39,7 +36,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: uploadError.message }, { status: 500 })
   }
 
-  // Simpan commit ke DB
   const [commit] = await db.insert(commits).values({
     branchId,
     parentCommitId: branch.headCommitId ?? undefined,
@@ -49,7 +45,6 @@ export async function POST(req: Request) {
     isSnapshot,
   }).returning()
 
-  // Update head commit di branch
   await db
     .update(branches)
     .set({ headCommitId: commit.id })

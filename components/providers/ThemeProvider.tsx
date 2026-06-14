@@ -72,7 +72,6 @@ export default function ThemeProvider({
   useEffect(() => {
     const preset: ThemePreset | undefined = PRESET_THEMES[themeId];
 
-    // determine effective mode (respect system when selected)
     let effectiveMode: "light" | "dark" = "light";
     if (mode === "system") {
       try {
@@ -117,6 +116,39 @@ export default function ThemeProvider({
     return () => mq.removeEventListener("change", handler);
   }, [mode]);
 
+  useEffect(() => {
+    function apply() {
+      const preset: ThemePreset | undefined = PRESET_THEMES[themeId];
+
+      let effectiveMode: "light" | "dark" = "light";
+      if (mode === "system") {
+        effectiveMode = window.matchMedia?.("(prefers-color-scheme: dark)")
+          .matches
+          ? "dark"
+          : "light";
+      } else {
+        effectiveMode = mode === "dark" ? "dark" : "light";
+      }
+
+      const tokens =
+        customTheme ??
+        (preset
+          ? (preset as any)[effectiveMode]
+          : PRESET_THEMES[DEFAULT_THEME_ID][effectiveMode]);
+
+      setCSSVars(tokens);
+      localStorage.setItem(
+        "chaptr:theme",
+        JSON.stringify({ themeId, customTheme, mode }),
+      );
+    }
+
+    apply();
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [themeId, customTheme, mode]);
+  
   const value: ThemeContextValue = {
     themeId,
     customTheme,

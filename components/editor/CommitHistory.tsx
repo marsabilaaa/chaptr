@@ -38,7 +38,7 @@ export default function CommitHistory({
     setLoading(true);
     const res = await fetch(`/api/commits?branchId=${branchId}`);
     const data = await res.json();
-    setCommits(data.reverse()); // terbaru di atas
+    setCommits(data.reverse());
     setLoading(false);
   }
 

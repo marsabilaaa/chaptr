@@ -29,7 +29,6 @@ export async function GET() {
 
     return NextResponse.json(pref);
   } catch (err) {
-    // If the table doesn't exist yet (migration not run), return defaults
     return NextResponse.json({
       themeId: DEFAULT_THEME_ID,
       mode: "system",
@@ -75,7 +74,6 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    // If table doesn't exist yet, respond ok so the client can continue using localStorage
     return NextResponse.json({ ok: true });
   }
 }

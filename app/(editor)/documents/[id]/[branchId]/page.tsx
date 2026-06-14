@@ -52,14 +52,12 @@ function sanitizePasteSlice(slice: Slice, schema: any) {
     });
     return Fragment.fromArray(nodes);
   };
-
   return new Slice(mapFragment(slice.content), slice.openStart, slice.openEnd);
 }
 
 function getDraftKey(branchId: string) {
   return `chaptr:draft:${branchId}`;
 }
-
 function loadDraft(branchId: string) {
   if (typeof window === "undefined") return null;
   try {
@@ -70,7 +68,6 @@ function loadDraft(branchId: string) {
     return null;
   }
 }
-
 function saveDraft(branchId: string, content: string) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(
@@ -78,7 +75,6 @@ function saveDraft(branchId: string, content: string) {
     JSON.stringify({ content, updatedAt: Date.now() }),
   );
 }
-
 function clearDraft(branchId: string) {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(getDraftKey(branchId));
@@ -98,7 +94,6 @@ export default function EditorPage() {
   const [saved, setSaved] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
-  const [isChapterOpen, setIsChapterOpen] = useState(true);
 
   const fullEditor = useEditor({
     immediatelyRender: false,
@@ -129,7 +124,6 @@ export default function EditorPage() {
   });
 
   const chapters = useChapters(fullEditor);
-
   const isChapterView = activeChapterId !== null;
   const currentEditor = isChapterView ? chapterEditor : fullEditor;
   const chapterSyncFlushRef = useRef<(() => void) | null>(null);
@@ -141,32 +135,26 @@ export default function EditorPage() {
 
   useEffect(() => {
     if (!id || !fullEditor) return;
-
     async function fetchDoc() {
       const res = await fetch(`/api/documents/${id}`);
       const data = await res.json();
       setTitle(data.title);
     }
-
     fetchDoc();
   }, [id, fullEditor]);
 
   useEffect(() => {
     async function fetchLatestContent() {
       if (!branchId || !fullEditor) return;
-
       const res = await fetch(`/api/commits?branchId=${branchId}`);
       if (!res.ok) return;
-
       const commits = await res.json();
       const latestCommit = commits?.length ? commits[commits.length - 1] : null;
       if (!latestCommit?.stateUrl) return;
-
       const restoreRes = await fetch(
         `/api/commits/restore?stateUrl=${encodeURIComponent(latestCommit.stateUrl)}`,
       );
       if (!restoreRes.ok) return;
-
       const data = await restoreRes.json();
       const commitContent = data.content ?? "";
       const draft = loadDraft(branchId);
@@ -174,12 +162,10 @@ export default function EditorPage() {
         draft?.content && draft.content !== commitContent
           ? draft.content
           : commitContent;
-
       fullEditor.commands.setContent(contentToLoad);
       lastSavedHtmlRef.current = contentToLoad;
       lastAutoCommitHtmlRef.current = commitContent;
     }
-
     fetchLatestContent();
   }, [branchId, fullEditor]);
 
@@ -191,30 +177,20 @@ export default function EditorPage() {
         body: JSON.stringify({ title }),
       });
     }, 1000);
-
     return () => clearTimeout(timeout);
   }, [title, id]);
 
   const createAutoCommit = useCallback(async () => {
     if (!branchId || !fullEditor || autoCommitPendingRef.current) return;
-
     const content = fullEditor.getHTML();
     if (!content || content === lastAutoCommitHtmlRef.current) return;
-
     autoCommitPendingRef.current = true;
-
     const res = await fetch("/api/commits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        branchId,
-        content,
-        message: "Autosave",
-      }),
+      body: JSON.stringify({ branchId, content, message: "Autosave" }),
     });
-
     autoCommitPendingRef.current = false;
-
     if (res.ok) {
       lastAutoCommitHtmlRef.current = content;
       clearDraft(branchId);
@@ -224,62 +200,46 @@ export default function EditorPage() {
 
   useEffect(() => {
     if (!branchId || !fullEditor) return;
-
     let timeoutId: number | undefined;
-
     const handleAutosave = () => {
       const content = fullEditor.getHTML();
       if (!content || content === lastSavedHtmlRef.current) return;
-
       saveDraft(branchId, content);
       lastSavedHtmlRef.current = content;
       setDraftSavedAt(Date.now());
       changeCountRef.current += 1;
-
       if (changeCountRef.current >= 20) {
         changeCountRef.current = 0;
         void createAutoCommit();
       }
     };
-
     const debouncedUpdate = () => {
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       timeoutId = window.setTimeout(handleAutosave, 1000);
     };
-
     fullEditor.on("update", debouncedUpdate);
-
     return () => {
       fullEditor.off("update", debouncedUpdate);
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, [branchId, fullEditor, createAutoCommit]);
 
   useEffect(() => {
     if (!branchId || !fullEditor) return;
-
     const intervalId = window.setInterval(
       () => {
         void createAutoCommit();
       },
       5 * 60 * 1000,
     );
-
     return () => window.clearInterval(intervalId);
   }, [branchId, fullEditor, createAutoCommit]);
 
   useEffect(() => {
     if (!chapterEditor || !fullEditor || activeChapterId === null) return;
-
     const chapter = chapters.find((item) => item.id === activeChapterId);
     if (!chapter) return;
-
     let timeoutId: number | undefined;
-
     const syncChapter = () => {
       const chapterJson = chapterEditor.getJSON();
       const fullDoc = fullEditor.state.doc;
@@ -289,28 +249,21 @@ export default function EditorPage() {
         chapter.to,
         new Slice(chapterDoc.content, 0, 0),
       );
-
       fullEditor.commands.setContent(updatedFull.toJSON());
       timeoutId = undefined;
     };
-
     const scheduleSync = () => {
       if (suppressChapterSyncRef.current) return;
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
       timeoutId = window.setTimeout(syncChapter, 500);
     };
-
     chapterSyncFlushRef.current = () => {
       if (timeoutId !== undefined) {
         window.clearTimeout(timeoutId);
         syncChapter();
       }
     };
-
     chapterEditor.on("update", scheduleSync);
-
     return () => {
       chapterEditor.off("update", scheduleSync);
       if (timeoutId !== undefined) {
@@ -324,46 +277,33 @@ export default function EditorPage() {
   useEffect(() => {
     if (
       activeChapterId !== null &&
-      !chapters.some((chapter) => chapter.id === activeChapterId)
+      !chapters.some((c) => c.id === activeChapterId)
     ) {
       setActiveChapterId(null);
     }
   }, [activeChapterId, chapters]);
 
   function getExportHtml() {
-    if (activeChapterId !== null) {
-      return chapterEditor?.getHTML() ?? "";
-    }
-    return fullEditor?.getHTML() ?? "";
+    return activeChapterId !== null
+      ? (chapterEditor?.getHTML() ?? "")
+      : (fullEditor?.getHTML() ?? "");
   }
-
   function getExportText() {
-    if (activeChapterId !== null) {
-      return chapterEditor?.getText() ?? "";
-    }
-    return fullEditor?.getText() ?? "";
+    return activeChapterId !== null
+      ? (chapterEditor?.getText() ?? "")
+      : (fullEditor?.getText() ?? "");
   }
 
   async function handleCommit() {
     if (!commitMessage.trim()) return;
     setSaving(true);
-
-    if (activeChapterId !== null) {
-      chapterSyncFlushRef.current?.();
-    }
-
+    if (activeChapterId !== null) chapterSyncFlushRef.current?.();
     const content = fullEditor?.getHTML() ?? "";
-
     const res = await fetch("/api/commits", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        branchId,
-        content,
-        message: commitMessage,
-      }),
+      body: JSON.stringify({ branchId, content, message: commitMessage }),
     });
-
     if (res.ok) {
       setSaved(true);
       setCommitMessage("");
@@ -374,14 +314,12 @@ export default function EditorPage() {
       setDraftSavedAt(Date.now());
       setTimeout(() => setSaved(false), 2000);
     }
-
     setSaving(false);
   }
 
   async function copyAsHtml() {
     const html = getExportHtml();
     if (!html) return;
-
     const fullHtml = `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8" />\n  <title>Export</title>\n</head>\n<body>\n${html}\n</body>\n</html>`;
     await navigator.clipboard.writeText(fullHtml);
   }
@@ -389,7 +327,6 @@ export default function EditorPage() {
   async function copyAsRichText() {
     const html = getExportHtml();
     if (!html) return;
-
     if (navigator.clipboard && "ClipboardItem" in window) {
       const blob = new Blob([html], { type: "text/html" });
       await navigator.clipboard.write([
@@ -424,24 +361,17 @@ export default function EditorPage() {
 
   function handleRestore(content: string) {
     fullEditor?.commands.setContent(content);
-    if (activeChapterId !== null) {
-      setActiveChapterId(null);
-    }
+    if (activeChapterId !== null) setActiveChapterId(null);
   }
 
   const handleSelectChapter = (chapterId: string | null) => {
     if (!fullEditor || !chapterEditor) return;
-
     if (chapterId === null) {
       setActiveChapterId(null);
       return;
     }
-
-    const selectedChapter = chapters.find(
-      (chapter) => chapter.id === chapterId,
-    );
+    const selectedChapter = chapters.find((c) => c.id === chapterId);
     if (!selectedChapter) return;
-
     if (activeChapterId === null) {
       fullEditor
         .chain()
@@ -449,7 +379,6 @@ export default function EditorPage() {
         .setTextSelection(selectedChapter.from)
         .scrollIntoView()
         .run();
-
       setTimeout(() => {
         const chapterHtml = getChapterHtml(selectedChapter, fullEditor);
         chapterEditor.commands.setContent(chapterHtml);
@@ -457,7 +386,6 @@ export default function EditorPage() {
       }, 150);
       return;
     }
-
     chapterSyncFlushRef.current?.();
     const chapterHtml = getChapterHtml(selectedChapter, fullEditor);
     suppressChapterSyncRef.current = true;
@@ -546,59 +474,17 @@ export default function EditorPage() {
         <EditorToolbar editor={currentEditor} disableHeading1={isChapterView} />
       </div>
 
+      {/* Chapter Bar — langsung di bawah toolbar */}
+      <ChapterBar
+        chapters={chapters}
+        activeChapterId={activeChapterId}
+        onSelect={handleSelectChapter}
+      />
+
       {/* Editor */}
-      <div
-        className={`max-w-3xl mx-auto px-6 py-12 ${
-          isChapterOpen ? "pb-40" : ""
-        }`}
-      >
+      <div className="max-w-3xl mx-auto px-6 py-12 pb-16">
         {currentEditor ? <EditorContent editor={currentEditor} /> : null}
       </div>
-
-      {/* Collapsible chapter bar */}
-      <div
-        className={`border-t border-border bg-background px-6 py-4 ${
-          isChapterOpen
-            ? "fixed bottom-4 left-0 right-0 z-40 mx-4 rounded-lg shadow-lg"
-            : "relative"
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold">Chapters</p>
-            <p className="text-xs text-muted-foreground">
-              Browse sections by H1 headings.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setIsChapterOpen((value) => !value)}
-          >
-            {isChapterOpen ? "Collapse" : "Open"}
-          </Button>
-        </div>
-        {isChapterOpen && (
-          <div className="mt-4">
-            <ChapterBar
-              chapters={chapters}
-              activeChapterId={activeChapterId}
-              onSelect={handleSelectChapter}
-            />
-          </div>
-        )}
-      </div>
-      {!isChapterOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setIsChapterOpen(true)}
-          >
-            Chapters
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
