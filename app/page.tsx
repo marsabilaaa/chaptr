@@ -44,7 +44,8 @@ export default function LandingPage() {
       <div className="max-w-[640px] mx-auto px-6 py-20 pb-24">
         {/* Nav */}
         <nav className="flex items-center justify-between mb-24">
-          <span className="text-[15px] font-medium tracking-tight">Chaptr</span>
+          <span 
+            className="text-sm font-semibold text-foreground transition hover:text-primary">Chaptr</span>
           <Link
             href="/login"
             className="h-8 px-3.5 rounded-lg border border-border/60 text-[13px] text-foreground hover:bg-accent/30 transition-colors flex items-center"

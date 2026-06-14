@@ -398,83 +398,90 @@ export default function EditorPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Navbar */}
-      <div className="sticky top-0 z-10 bg-background border-b border-border px-6 py-3 flex items-center justify-between">
-        <div className="flex flex-1 flex-wrap items-center gap-4">
-          <button
-            type="button"
-            onClick={() => router.push("/documents")}
-            className="text-sm font-semibold text-foreground transition hover:text-primary"
-          >
-            Chaptr
-          </button>
-          <span className="text-muted-foreground text-sm">/</span>
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 min-w-[10rem] max-w-full sm:w-48"
-          />
+      {/* PERUBAHAN: Hanya menambahkan div pembungkus ini agar Navbar 
+        dan Toolbar tetap sticky bersama-sama 
+      */}
+      <div className="sticky top-0 z-10 bg-background">
+        {/* Navbar (Properti sticky aslinya dipindah ke div induk di atas) */}
+        <div className="border-b border-border px-6 py-3 flex items-center justify-between">
+          <div className="flex flex-1 flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => router.push("/documents")}
+              className="text-sm font-semibold text-foreground transition hover:text-primary"
+            >
+              Chaptr
+            </button>
+            <span className="text-muted-foreground text-sm">/</span>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 min-w-[10rem] max-w-full sm:w-48"
+            />
+          </div>
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-right">
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:text-right">
+              <span>
+                {currentEditor?.storage.characterCount.words() ?? 0} words
+              </span>
+              <span>{draftSavedAt ? "Draft saved" : "Draft not saved"}</span>
+            </div>
+            <div className="relative">
+              <CommitHistory branchId={branchId} onRestore={handleRestore} />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  <Share2 className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Export</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={copyAsHtml}>
+                  <Copy className="h-4 w-4" />
+                  Copy as HTML
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={copyAsRichText}>
+                  <FileText className="h-4 w-4" />
+                  Copy as rich text
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={downloadHtml}>
+                  <Download className="h-4 w-4" />
+                  Download HTML
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={downloadDoc}>
+                  <Download className="h-4 w-4" />
+                  Download DOC
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Input
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              placeholder="Commit message"
+              className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 w-52"
+            />
+            <Button
+              size="sm"
+              onClick={handleCommit}
+              disabled={saving || !commitMessage.trim()}
+            >
+              {saving ? "Saving..." : saved ? "Saved ✓" : "Commit"}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 text-right">
-          <div className="flex flex-col gap-1 text-xs text-muted-foreground sm:text-right">
-            <span>
-              {currentEditor?.storage.characterCount.words() ?? 0} words
-            </span>
-            <span>{draftSavedAt ? "Draft saved" : "Draft not saved"}</span>
-          </div>
-          <div className="relative">
-            <CommitHistory branchId={branchId} onRestore={handleRestore} />
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                <Share2 className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Export</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={copyAsHtml}>
-                <Copy className="h-4 w-4" />
-                Copy as HTML
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={copyAsRichText}>
-                <FileText className="h-4 w-4" />
-                Copy as rich text
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={downloadHtml}>
-                <Download className="h-4 w-4" />
-                Download HTML
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={downloadDoc}>
-                <Download className="h-4 w-4" />
-                Download DOC
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Input
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder="Commit message"
-            className="h-7 text-sm border-none shadow-none focus-visible:ring-0 px-1 w-52"
+
+        {/* Toolbar */}
+        <div className="border-b border-border px-6 py-2">
+          <EditorToolbar
+            editor={currentEditor}
+            disableHeading1={isChapterView}
           />
-          <Button
-            size="sm"
-            onClick={handleCommit}
-            disabled={saving || !commitMessage.trim()}
-          >
-            {saving ? "Saving..." : saved ? "Saved ✓" : "Commit"}
-          </Button>
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="border-b border-border px-6 py-2">
-        <EditorToolbar editor={currentEditor} disableHeading1={isChapterView} />
-      </div>
-
-      {/* Chapter Bar — langsung di bawah toolbar */}
       <ChapterBar
         chapters={chapters}
         activeChapterId={activeChapterId}
